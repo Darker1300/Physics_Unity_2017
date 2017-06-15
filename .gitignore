@@ -32,3 +32,5 @@ sysinfo.txt
 # Builds
 *.apk
 *.unitypackage
+Physics_Unity_2017/Library/
+Physics_Unity_2017/Temp/
