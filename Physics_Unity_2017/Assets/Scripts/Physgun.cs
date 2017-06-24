@@ -11,87 +11,169 @@ public class Physgun : MonoBehaviour
         CONNECTED
     }
 
+    [System.Serializable]
+    public class RigidBodyCache
+    {
+        public bool useGravity;
+        public int solverCount;
+        public RigidbodyInterpolation interpolation;
+        public CollisionDetectionMode detection;
+
+        public void Read(Rigidbody _rigidBody)
+        {
+            useGravity = _rigidBody.useGravity;
+            solverCount = _rigidBody.solverIterations;
+            interpolation = _rigidBody.interpolation;
+            detection = _rigidBody.collisionDetectionMode;
+        }
+        public void Write(ref Rigidbody _rigidBody)
+        {
+            _rigidBody.useGravity = useGravity;
+            _rigidBody.solverIterations = solverCount;
+            _rigidBody.interpolation = interpolation;
+            _rigidBody.collisionDetectionMode = detection;
+        }
+        public void Clear()
+        {
+            useGravity = false;
+            solverCount = 0;
+            interpolation = RigidbodyInterpolation.None;
+            detection = CollisionDetectionMode.Discrete;
+        }
+    }
+
     public Transform gunEnd = null;
     public Transform beamEnd = null;
     public LineRenderer lineRenderer = null;
-    public LayerMask layerMask = new LayerMask();
-    // public float connectedDistance = 0.0f;
-    //public float sensitivity = 5.0f;
-
-    GunState currentState = GunState.INACTIVE;
-
-    Rigidbody connectedBody = null;
-    RaycastHit currentHit;
     public Joint joint = null;
-    public int connectedSolverCount = 10;
-    bool connectedCache_Gravity = false;
-    int connectedCache_SolverCount = 0;
-    RigidbodyInterpolation connectedCache_interp = RigidbodyInterpolation.None;
-    CollisionDetectionMode connectedCache_detect = CollisionDetectionMode.Discrete;
-    bool heldDown = false;
+    [Header("Configuration")]
+    public string inputUseID = "Fire1";
+    public LayerMask layerMask = new LayerMask();
+    public float distanceSpeedModifier = 100;
+    public float distanceMinimum = 1;
+    public float rotationSpeedDegrees = 120;
 
-    Vector3[] BeamPoints = new Vector3[16];
+    RaycastHit currentHit;
+    GunState currentState = GunState.INACTIVE;
+    bool inputWasHeldDown = false;
+    Rigidbody connectedBody = null;
+    Vector3 connectedLocalHit = new Vector3();
+    Vector3[] beamLinePoints = new Vector3[17];
+
+    public RigidBodyCache activeSettings = new RigidBodyCache
+    {
+        useGravity = false,
+        solverCount = 20,
+        interpolation = RigidbodyInterpolation.Interpolate,
+        detection = CollisionDetectionMode.ContinuousDynamic
+    };
+    public RigidBodyCache cacheSettings = new RigidBodyCache();
 
     void Start()
     {
         if (!lineRenderer) lineRenderer = GetComponent<LineRenderer>();
-        lineRenderer.numPositions = BeamPoints.Length;
         if (!gunEnd) gunEnd = GetComponent<Transform>();
         if (!beamEnd) beamEnd = GetComponent<Transform>();
         if (!joint) joint = beamEnd.GetComponent<Joint>();
 
+        // Set up Line Renderer
+        lineRenderer.numPositions = beamLinePoints.Length;
     }
 
     void Update()
     {
+        ProcessBeamState();
     }
 
     void FixedUpdate()
     {
-        ProcessBeamState();
     }
 
     void OnConnectionEnter()
     {
+        // Store connection details
         connectedBody = currentHit.rigidbody;
+        connectedLocalHit = currentHit.transform.InverseTransformPoint(currentHit.point);
         beamEnd.position = currentHit.point;
-        // Gravity
-        connectedCache_Gravity = connectedBody.useGravity;
-        connectedBody.useGravity = false;
-        // Solver Count
-        connectedCache_SolverCount = connectedBody.solverIterations;
-        connectedBody.solverIterations = connectedSolverCount;
-        // Interpolation
-        connectedCache_interp = connectedBody.interpolation;
-        connectedBody.interpolation = RigidbodyInterpolation.Interpolate;
-        // Detection
-        connectedCache_detect = connectedBody.collisionDetectionMode;
-        connectedBody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        beamEnd.rotation = currentHit.transform.rotation;
 
-        //connectedDistance = Vector3.Distance(gunEnd.position, connectedPoint);
+        // Store RigidBody settings
+        cacheSettings.Read(connectedBody);
+        // Apply custom RigidBody settings
+        activeSettings.Write(ref connectedBody);
+
+        // Attach to joint
         joint.connectedBody = connectedBody;
     }
 
     void OnConnectionStay()
     {
+        // Distance Control
+        if (Input.mouseScrollDelta.y != 0.0f)
+        {
+            float dist = Input.mouseScrollDelta.y * Time.deltaTime * distanceSpeedModifier;
+            if (Mathf.Sign(Input.mouseScrollDelta.y) == 1.0f)
+            {
+                beamEnd.position += gunEnd.forward * dist;
+            }
+            else
+            {
+                Vector3 min = gunEnd.position + gunEnd.forward * distanceMinimum;
+                beamEnd.position = Vector3.MoveTowards(beamEnd.position, min, Mathf.Abs(dist));
+            }
+        }
+        // Rotation Test
+        if (Input.GetKey(KeyCode.E))
+        {
+            beamEnd.RotateAround(beamEnd.TransformPoint(joint.anchor), gunEnd.up, Time.deltaTime * rotationSpeedDegrees);
+        }
+
+
+        #region HiddenTesting
+        //if (Input.GetButton("Fire2"))
+        //{
+        //beamEnd.Rotate(Vector3.left * Time.fixedDeltaTime * 5.0f, Space.World);
+        //rotationFromBeamEnd = Quaternion.FromToRotation(beamEnd.forward, currentHit.transform.forward);
+        //connectedBody.angularVelocity = rotationFromBeamEnd.eulerAngles * Mathf.Deg2Rad;
+        //Debug.Log(connectedBody.angularVelocity);
+        //connectedBody.transform.rotation = beamEnd.rotation * rotationFromBeamEnd;
+
+
+        //Quaternion target = Quaternion.AngleAxis(10, Vector3.up) * connectedBody.transform.rotation;
+        //// Quaternion smooth = Quaternion.RotateTowards(connectedBody.transform.rotation, target, 10 * Time.fixedDeltaTime);
+        //connectedBody.MoveRotation(target);
+        //}
+
+        //Quaternion CurrentDifference = Quaternion.FromToRotation(beamEnd.forward, connectedBody.transform.forward);
+
+
+        // if this doesn't work try "B.transform.eulerAngles - A.transform.eulerAngles" below
+        // Vector3 difference = beamEnd.eulerAngles - connectedBody.transform.eulerAngles;
+
+
+        //Vector3 difference = beamEnd.eulerAngles - connectedBody.transform.eulerAngles;
+        //Vector3 velocity = difference / Time.fixedDeltaTime;
+        //connectedBody.angularVelocity += velocity;
+
         //connectedBody.rotation = gunEnd.transform.rotation;
 
         //Vector3 targetPosition = (gunEnd.transform.position +
         //        gunEnd.transform.forward * connectedDistance);
         //connectedPoint = targetPosition;
-        //connectedBody.MovePosition(targetPosition);
-
+        //connectedBody.MovePosition(targetPosition); 
+        #endregion
     }
 
     void OnConnectionExit()
     {
-        connectedBody.useGravity = connectedCache_Gravity;
-        connectedBody.solverIterations = connectedCache_SolverCount;
-        connectedBody.interpolation = connectedCache_interp;
-        connectedBody.collisionDetectionMode = connectedCache_detect;
-        //connectedBody.freezeRotation = false;
+        // Restore previous RigidBody settings
+        cacheSettings.Write(ref connectedBody);
+        cacheSettings.Clear();
+
         joint.connectedBody = null;
         connectedBody = null;
+
+        beamEnd.position = gunEnd.position;
     }
 
     void LateUpdate()
@@ -104,34 +186,35 @@ public class Physgun : MonoBehaviour
                     lineRenderer.enabled = false;
                 break;
             case GunState.SEARCHING:
-                if (!lineRenderer.enabled)
-                    lineRenderer.enabled = true;
-                // Calculate Points
-                Vector3 endPoint = gunEnd.position + gunEnd.forward * 3;
-                BeamPoints[0] = gunEnd.position;
-                for (int i = 1; i < BeamPoints.Length; i++)
                 {
-                    float percentage = i / (BeamPoints.Length - 1.0f);
-                    BeamPoints[i] = Vector3.Lerp(gunEnd.position, endPoint, percentage);
-                    //BeamPoints[i] = InterpolateFromCatmullRomSpline(
-                    //    gunEnd.position,
-                    //    Vector3.Lerp(gunEnd.position, endPoint, percentage) + (gunEnd.right * Mathf.Sin(Time.time)),
-                    //    Vector3.Lerp(gunEnd.position, endPoint, percentage) - (gunEnd.right * Mathf.Sin(Time.time)),
-                    //    endPoint, percentage);
+                    if (!lineRenderer.enabled)
+                        lineRenderer.enabled = true;
+                    // Calculate Points
+                    beamLinePoints[0] = gunEnd.position;
+                    for (int i = 1; i < beamLinePoints.Length; i++)
+                    {
+                        float percentage = i / (beamLinePoints.Length - 1.0f);
+                        beamLinePoints[i] = Vector3.Lerp(gunEnd.position, currentHit.point, percentage);
+                    }
+                    lineRenderer.SetPositions(beamLinePoints);
                 }
-                lineRenderer.SetPositions(BeamPoints);
                 break;
             case GunState.CONNECTED:
-                if (!lineRenderer.enabled)
-                    lineRenderer.enabled = true;
-                // Calculate Points
-                BeamPoints[0] = gunEnd.position;
-                for (int i = 1; i < BeamPoints.Length; i++)
                 {
-                    float percentage = i / (BeamPoints.Length - 1.0f);
-                    BeamPoints[i] = Vector3.Lerp(gunEnd.position, beamEnd.position, percentage);
+                    if (!lineRenderer.enabled)
+                        lineRenderer.enabled = true;
+                    // Calculate Points
+                    Vector3 endPoint = connectedBody.transform.TransformPoint(connectedLocalHit);
+                    Vector3 midPoint = Vector3.Lerp(gunEnd.position, beamEnd.position, 0.5f);
+                    beamLinePoints[0] = gunEnd.position;
+                    for (int i = 1; i < beamLinePoints.Length; i++)
+                    {
+                        float percentage = i / (beamLinePoints.Length - 1.0f);
+                        //BeamPoints[i] = Vector3.Lerp(gunEnd.position, beamEnd.position, percentage);
+                        beamLinePoints[i] = Bezier(gunEnd.position, midPoint, endPoint, percentage);
+                    }
+                    lineRenderer.SetPositions(beamLinePoints);
                 }
-                lineRenderer.SetPositions(BeamPoints);
                 break;
             default:
                 break;
@@ -141,12 +224,12 @@ public class Physgun : MonoBehaviour
     void ProcessBeamState()
     {
         // Check Current Input
-        bool input = Input.GetButton("Fire1");
+        bool input = Input.GetButton(inputUseID);
 
         if (input)
         {
             // Input Is Down
-            heldDown = true;
+            inputWasHeldDown = true;
             if (currentState == GunState.INACTIVE)
                 currentState = GunState.SEARCHING;
         }
@@ -157,9 +240,9 @@ public class Physgun : MonoBehaviour
                 currentState = GunState.INACTIVE;
 
             // Input Was Released
-            if (heldDown)
+            if (inputWasHeldDown)
             {
-                heldDown = false;
+                inputWasHeldDown = false;
                 if (currentState == GunState.CONNECTED)
                 {
                     // Lost Connection
@@ -172,6 +255,7 @@ public class Physgun : MonoBehaviour
         // Try to Connect
         if (currentState == GunState.SEARCHING)
         {
+            // Raycast
             bool rayHit = Physics.Raycast(gunEnd.position, gunEnd.forward, out currentHit, float.MaxValue, layerMask);
             if (rayHit)
             {
@@ -191,7 +275,6 @@ public class Physgun : MonoBehaviour
         }
     }
 
-
     public static Vector2 InterpolateFromCatmullRomSpline(Vector2 p1, Vector2 p2, Vector2 p3, Vector2 p4, float t)
     {
         return 0.5f * ((2f * p2) + (-p1 + p3) * t + (2f * p1 - 5f * p2 + 4f * p3 - p4) * Mathf.Pow(t, 2f) + (-p1 + 3f * p2 - 3f * p3 + p4) * Mathf.Pow(t, 3f));
@@ -199,5 +282,10 @@ public class Physgun : MonoBehaviour
     public static Vector3 InterpolateFromCatmullRomSpline(Vector3 p1, Vector3 p2, Vector3 p3, Vector3 p4, float t)
     {
         return 0.5f * ((2f * p2) + (-p1 + p3) * t + (2f * p1 - 5f * p2 + 4f * p3 - p4) * Mathf.Pow(t, 2f) + (-p1 + 3f * p2 - 3f * p3 + p4) * Mathf.Pow(t, 3f));
+    }
+
+    public static Vector3 Bezier(Vector3 p1, Vector3 p2, Vector3 p3, float t)
+    {
+        return Vector3.Lerp(Vector3.Lerp(p1, p2, t), Vector3.Lerp(p2, p3, t), t);
     }
 }
