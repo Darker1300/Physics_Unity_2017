@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class MaterialAnimator : MonoBehaviour
@@ -10,17 +8,18 @@ public class MaterialAnimator : MonoBehaviour
     public float speed = 0.5f;
     public AnimationCurve curve = new AnimationCurve();
     public float evaluation = 0.0f;
+
     [Range(0, 2)]
     public float currentTime = 0.0f;
 
-    void Start()
+    private void Start()
     {
         currentTime = 0.0f;
         evaluation = 0.0f;
         currentTime = 0.0f;
     }
 
-    void Update()
+    private void Update()
     {
         if (activate && material)
         {

@@ -33,8 +33,8 @@ Shader "Custom/Negative" {
 			fixed4 c = tex2D (_MainTex, IN.uv_MainTex) * _Color;
 			o.Albedo = abs(c.rgb - _Invert);
 			// Metallic and smoothness come from slider variables
-			o.Metallic = _Metallic;//  abs(_Metallic - _Invert);
-			o.Smoothness = _Glossiness;//  abs(_Glossiness - _Invert);
+			o.Metallic = _Metallic;
+			o.Smoothness = _Glossiness;
 			o.Alpha = c.a;
 		}
 		ENDCG
