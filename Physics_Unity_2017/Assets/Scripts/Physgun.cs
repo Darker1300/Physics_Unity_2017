@@ -60,9 +60,9 @@ public class Physgun : MonoBehaviour
     public LayerMask layerMask = new LayerMask();
     public float distanceSpeedModifier = 100;
     public float distanceMinimum = 1;
-    public float rotationSpeedDegrees = 120;
-    public MouseLook mlx;
-    public MouseLook mly;
+    public float rotationSpeedDegrees = 360;
+    public MouseLookAxis mouseLookX;
+    public MouseLookAxis mouseLookY;
 
     private RaycastHit currentHit;
     private GunState currentState = GunState.INACTIVE;
@@ -142,18 +142,17 @@ public class Physgun : MonoBehaviour
         // Rotation Test
         if (Input.GetKey(KeyCode.E))
         {
-            mlx.enabled = false;
-            mly.enabled = false;
+            mouseLookX.enabled = false;
+            mouseLookY.enabled = false;
 
-            beamEnd.RotateAround(beamEnd.TransformPoint(joint.anchor), -gunEnd.up, Time.deltaTime * rotationSpeedDegrees * Input.GetAxis("Mouse X"));
-            beamEnd.RotateAround(beamEnd.TransformPoint(joint.anchor), gunEnd.right, Time.deltaTime * rotationSpeedDegrees * Input.GetAxis("Mouse Y"));
+            beamEnd.RotateAround(beamEnd.TransformPoint(joint.anchor), gunEnd.up, Time.deltaTime * rotationSpeedDegrees * Input.GetAxis("Mouse X"));
+            beamEnd.RotateAround(beamEnd.TransformPoint(joint.anchor), -gunEnd.right, Time.deltaTime * rotationSpeedDegrees * Input.GetAxis("Mouse Y"));
         }
         else
         {
-            mlx.enabled = true;
-            mly.enabled = true;
+            mouseLookX.enabled = true;
+            mouseLookY.enabled = true;
         }
-        
 
         #region HiddenTesting
 
@@ -200,8 +199,8 @@ public class Physgun : MonoBehaviour
 
         beamEnd.position = gunEnd.position;
 
-        mlx.enabled = true;
-        mly.enabled = true;
+        mouseLookX.enabled = true;
+        mouseLookY.enabled = true;
     }
 
     private void ProcessBeamState()
@@ -324,6 +323,7 @@ public class Physgun : MonoBehaviour
     {
         return Vector3.Lerp(Vector3.Lerp(p1, p2, t), Vector3.Lerp(p2, p3, t), t);
     }
+
     private static int layermask_to_layer(LayerMask layerMask)
     {
         int layerNumber = 0;
