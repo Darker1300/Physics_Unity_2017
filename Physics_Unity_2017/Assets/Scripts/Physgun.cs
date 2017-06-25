@@ -1,6 +1,4 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 
 public class Physgun : MonoBehaviour
 {
@@ -12,12 +10,14 @@ public class Physgun : MonoBehaviour
     }
 
     [System.Serializable]
-    public class RigidBodyCache
+    public class ConnectedCache
     {
         public bool useGravity;
         public int solverCount;
         public RigidbodyInterpolation interpolation;
         public CollisionDetectionMode detection;
+
+        public int layer;
 
         public void Read(Rigidbody _rigidBody)
         {
@@ -25,20 +25,27 @@ public class Physgun : MonoBehaviour
             solverCount = _rigidBody.solverIterations;
             interpolation = _rigidBody.interpolation;
             detection = _rigidBody.collisionDetectionMode;
+            GameObject go = _rigidBody.gameObject;
+            layer = go.layer;
         }
+
         public void Write(ref Rigidbody _rigidBody)
         {
             _rigidBody.useGravity = useGravity;
             _rigidBody.solverIterations = solverCount;
             _rigidBody.interpolation = interpolation;
             _rigidBody.collisionDetectionMode = detection;
+            GameObject go = _rigidBody.gameObject;
+            go.layer = layer;
         }
+
         public void Clear()
         {
             useGravity = false;
             solverCount = 0;
             interpolation = RigidbodyInterpolation.None;
             detection = CollisionDetectionMode.Discrete;
+            layer = 0;
         }
     }
 
@@ -46,30 +53,35 @@ public class Physgun : MonoBehaviour
     public Transform beamEnd = null;
     public LineRenderer lineRenderer = null;
     public Joint joint = null;
+
     [Header("Configuration")]
     public string inputUseID = "Fire1";
+
     public LayerMask layerMask = new LayerMask();
     public float distanceSpeedModifier = 100;
     public float distanceMinimum = 1;
     public float rotationSpeedDegrees = 120;
+    public MouseLook mlx;
+    public MouseLook mly;
 
-    RaycastHit currentHit;
-    GunState currentState = GunState.INACTIVE;
-    bool inputWasHeldDown = false;
-    Rigidbody connectedBody = null;
-    Vector3 connectedLocalHit = new Vector3();
-    Vector3[] beamLinePoints = new Vector3[17];
+    private RaycastHit currentHit;
+    private GunState currentState = GunState.INACTIVE;
+    private bool inputWasHeldDown = false;
+    private Rigidbody connectedBody = null;
+    private Vector3 connectedLocalHit = new Vector3();
+    private Vector3[] beamLinePoints = new Vector3[17];
 
-    public RigidBodyCache activeSettings = new RigidBodyCache
+    public ConnectedCache activeSettings = new ConnectedCache
     {
         useGravity = false,
         solverCount = 20,
         interpolation = RigidbodyInterpolation.Interpolate,
         detection = CollisionDetectionMode.ContinuousDynamic
     };
-    public RigidBodyCache cacheSettings = new RigidBodyCache();
 
-    void Start()
+    public ConnectedCache cacheSettings = new ConnectedCache();
+
+    private void Start()
     {
         if (!lineRenderer) lineRenderer = GetComponent<LineRenderer>();
         if (!gunEnd) gunEnd = GetComponent<Transform>();
@@ -80,16 +92,21 @@ public class Physgun : MonoBehaviour
         lineRenderer.numPositions = beamLinePoints.Length;
     }
 
-    void Update()
+    private void Update()
     {
         ProcessBeamState();
     }
 
-    void FixedUpdate()
+    private void FixedUpdate()
     {
     }
 
-    void OnConnectionEnter()
+    private void LateUpdate()
+    {
+        DrawBeamState();
+    }
+
+    private void OnConnectionEnter()
     {
         // Store connection details
         connectedBody = currentHit.rigidbody;
@@ -106,7 +123,7 @@ public class Physgun : MonoBehaviour
         joint.connectedBody = connectedBody;
     }
 
-    void OnConnectionStay()
+    private void OnConnectionStay()
     {
         // Distance Control
         if (Input.mouseScrollDelta.y != 0.0f)
@@ -125,11 +142,21 @@ public class Physgun : MonoBehaviour
         // Rotation Test
         if (Input.GetKey(KeyCode.E))
         {
-            beamEnd.RotateAround(beamEnd.TransformPoint(joint.anchor), gunEnd.up, Time.deltaTime * rotationSpeedDegrees);
-        }
+            mlx.enabled = false;
+            mly.enabled = false;
 
+            beamEnd.RotateAround(beamEnd.TransformPoint(joint.anchor), -gunEnd.up, Time.deltaTime * rotationSpeedDegrees * Input.GetAxis("Mouse X"));
+            beamEnd.RotateAround(beamEnd.TransformPoint(joint.anchor), gunEnd.right, Time.deltaTime * rotationSpeedDegrees * Input.GetAxis("Mouse Y"));
+        }
+        else
+        {
+            mlx.enabled = true;
+            mly.enabled = true;
+        }
+        
 
         #region HiddenTesting
+
         //if (Input.GetButton("Fire2"))
         //{
         //beamEnd.Rotate(Vector3.left * Time.fixedDeltaTime * 5.0f, Space.World);
@@ -138,7 +165,6 @@ public class Physgun : MonoBehaviour
         //Debug.Log(connectedBody.angularVelocity);
         //connectedBody.transform.rotation = beamEnd.rotation * rotationFromBeamEnd;
 
-
         //Quaternion target = Quaternion.AngleAxis(10, Vector3.up) * connectedBody.transform.rotation;
         //// Quaternion smooth = Quaternion.RotateTowards(connectedBody.transform.rotation, target, 10 * Time.fixedDeltaTime);
         //connectedBody.MoveRotation(target);
@@ -146,10 +172,8 @@ public class Physgun : MonoBehaviour
 
         //Quaternion CurrentDifference = Quaternion.FromToRotation(beamEnd.forward, connectedBody.transform.forward);
 
-
         // if this doesn't work try "B.transform.eulerAngles - A.transform.eulerAngles" below
         // Vector3 difference = beamEnd.eulerAngles - connectedBody.transform.eulerAngles;
-
 
         //Vector3 difference = beamEnd.eulerAngles - connectedBody.transform.eulerAngles;
         //Vector3 velocity = difference / Time.fixedDeltaTime;
@@ -160,11 +184,12 @@ public class Physgun : MonoBehaviour
         //Vector3 targetPosition = (gunEnd.transform.position +
         //        gunEnd.transform.forward * connectedDistance);
         //connectedPoint = targetPosition;
-        //connectedBody.MovePosition(targetPosition); 
-        #endregion
+        //connectedBody.MovePosition(targetPosition);
+
+        #endregion HiddenTesting
     }
 
-    void OnConnectionExit()
+    private void OnConnectionExit()
     {
         // Restore previous RigidBody settings
         cacheSettings.Write(ref connectedBody);
@@ -174,54 +199,12 @@ public class Physgun : MonoBehaviour
         connectedBody = null;
 
         beamEnd.position = gunEnd.position;
+
+        mlx.enabled = true;
+        mly.enabled = true;
     }
 
-    void LateUpdate()
-    {
-        // Drawing Beam
-        switch (currentState)
-        {
-            case GunState.INACTIVE:
-                if (lineRenderer.enabled)
-                    lineRenderer.enabled = false;
-                break;
-            case GunState.SEARCHING:
-                {
-                    if (!lineRenderer.enabled)
-                        lineRenderer.enabled = true;
-                    // Calculate Points
-                    beamLinePoints[0] = gunEnd.position;
-                    for (int i = 1; i < beamLinePoints.Length; i++)
-                    {
-                        float percentage = i / (beamLinePoints.Length - 1.0f);
-                        beamLinePoints[i] = Vector3.Lerp(gunEnd.position, currentHit.point, percentage);
-                    }
-                    lineRenderer.SetPositions(beamLinePoints);
-                }
-                break;
-            case GunState.CONNECTED:
-                {
-                    if (!lineRenderer.enabled)
-                        lineRenderer.enabled = true;
-                    // Calculate Points
-                    Vector3 endPoint = connectedBody.transform.TransformPoint(connectedLocalHit);
-                    Vector3 midPoint = Vector3.Lerp(gunEnd.position, beamEnd.position, 0.5f);
-                    beamLinePoints[0] = gunEnd.position;
-                    for (int i = 1; i < beamLinePoints.Length; i++)
-                    {
-                        float percentage = i / (beamLinePoints.Length - 1.0f);
-                        //BeamPoints[i] = Vector3.Lerp(gunEnd.position, beamEnd.position, percentage);
-                        beamLinePoints[i] = Bezier(gunEnd.position, midPoint, endPoint, percentage);
-                    }
-                    lineRenderer.SetPositions(beamLinePoints);
-                }
-                break;
-            default:
-                break;
-        }
-    }
-
-    void ProcessBeamState()
+    private void ProcessBeamState()
     {
         // Check Current Input
         bool input = Input.GetButton(inputUseID);
@@ -229,6 +212,11 @@ public class Physgun : MonoBehaviour
         if (input)
         {
             // Input Is Down
+
+            // Lock Cursor
+            Cursor.visible = false;
+            Cursor.lockState = CursorLockMode.Locked;
+
             inputWasHeldDown = true;
             if (currentState == GunState.INACTIVE)
                 currentState = GunState.SEARCHING;
@@ -275,10 +263,58 @@ public class Physgun : MonoBehaviour
         }
     }
 
+    private void DrawBeamState()
+    {
+        switch (currentState)
+        {
+            case GunState.INACTIVE:
+                if (lineRenderer.enabled)
+                    lineRenderer.enabled = false;
+                break;
+
+            case GunState.SEARCHING:
+                {
+                    if (!lineRenderer.enabled)
+                        lineRenderer.enabled = true;
+                    // Calculate Points
+                    beamLinePoints[0] = gunEnd.position;
+                    for (int i = 1; i < beamLinePoints.Length; i++)
+                    {
+                        float percentage = i / (beamLinePoints.Length - 1.0f);
+                        beamLinePoints[i] = Vector3.Lerp(gunEnd.position, currentHit.point, percentage);
+                    }
+                    lineRenderer.SetPositions(beamLinePoints);
+                }
+                break;
+
+            case GunState.CONNECTED:
+                {
+                    if (!lineRenderer.enabled)
+                        lineRenderer.enabled = true;
+                    // Calculate Points
+                    Vector3 endPoint = connectedBody.transform.TransformPoint(connectedLocalHit);
+                    Vector3 midPoint = Vector3.Lerp(gunEnd.position, beamEnd.position, 0.5f);
+                    beamLinePoints[0] = gunEnd.position;
+                    for (int i = 1; i < beamLinePoints.Length; i++)
+                    {
+                        float percentage = i / (beamLinePoints.Length - 1.0f);
+                        //BeamPoints[i] = Vector3.Lerp(gunEnd.position, beamEnd.position, percentage);
+                        beamLinePoints[i] = Bezier(gunEnd.position, midPoint, endPoint, percentage);
+                    }
+                    lineRenderer.SetPositions(beamLinePoints);
+                }
+                break;
+
+            default:
+                break;
+        }
+    }
+
     public static Vector2 InterpolateFromCatmullRomSpline(Vector2 p1, Vector2 p2, Vector2 p3, Vector2 p4, float t)
     {
         return 0.5f * ((2f * p2) + (-p1 + p3) * t + (2f * p1 - 5f * p2 + 4f * p3 - p4) * Mathf.Pow(t, 2f) + (-p1 + 3f * p2 - 3f * p3 + p4) * Mathf.Pow(t, 3f));
     }
+
     public static Vector3 InterpolateFromCatmullRomSpline(Vector3 p1, Vector3 p2, Vector3 p3, Vector3 p4, float t)
     {
         return 0.5f * ((2f * p2) + (-p1 + p3) * t + (2f * p1 - 5f * p2 + 4f * p3 - p4) * Mathf.Pow(t, 2f) + (-p1 + 3f * p2 - 3f * p3 + p4) * Mathf.Pow(t, 3f));
@@ -287,5 +323,16 @@ public class Physgun : MonoBehaviour
     public static Vector3 Bezier(Vector3 p1, Vector3 p2, Vector3 p3, float t)
     {
         return Vector3.Lerp(Vector3.Lerp(p1, p2, t), Vector3.Lerp(p2, p3, t), t);
+    }
+    private static int layermask_to_layer(LayerMask layerMask)
+    {
+        int layerNumber = 0;
+        int layer = layerMask.value;
+        while (layer > 0)
+        {
+            layer = layer >> 1;
+            layerNumber++;
+        }
+        return layerNumber - 1;
     }
 }
