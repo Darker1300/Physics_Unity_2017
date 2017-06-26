@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+using UnityEngine;
+using UnityEngine.Events;
 
 public class Physgun : MonoBehaviour
 {
@@ -57,19 +58,20 @@ public class Physgun : MonoBehaviour
     [Header("Configuration")]
     public string inputUseID = "Fire1";
 
+    public string inputRotateID = "Fire2";
+
     public LayerMask layerMask = new LayerMask();
     public float distanceSpeedModifier = 100;
     public float distanceMinimum = 1;
     public float rotationSpeedDegrees = 360;
-    public MouseLookAxis mouseLookX;
-    public MouseLookAxis mouseLookY;
 
     private RaycastHit currentHit;
     private GunState currentState = GunState.INACTIVE;
-    private bool inputWasHeldDown = false;
     private Rigidbody connectedBody = null;
     private Vector3 connectedLocalHit = new Vector3();
     private Vector3[] beamLinePoints = new Vector3[17];
+    private bool grabStarted = false;
+    private bool rotationStarted = false;
 
     public ConnectedCache activeSettings = new ConnectedCache
     {
@@ -81,6 +83,20 @@ public class Physgun : MonoBehaviour
 
     public ConnectedCache cacheSettings = new ConnectedCache();
 
+    public UnityEvent GrabEnter = new UnityEvent();
+
+    [HideInInspector]
+    public UnityEvent GrabStay = new UnityEvent();
+
+    public UnityEvent GrabExit = new UnityEvent();
+
+    public UnityEvent RotationEnter = new UnityEvent();
+
+    [HideInInspector]
+    public UnityEvent RotationStay = new UnityEvent();
+
+    public UnityEvent RotationExit = new UnityEvent();
+
     private void Start()
     {
         if (!lineRenderer) lineRenderer = GetComponent<LineRenderer>();
@@ -90,6 +106,14 @@ public class Physgun : MonoBehaviour
 
         // Set up Line Renderer
         lineRenderer.numPositions = beamLinePoints.Length;
+
+        GrabEnter.AddListener(OnGrabEnter);
+        GrabStay.AddListener(OnGrabStay);
+        GrabExit.AddListener(OnGrabExit);
+
+        RotationEnter.AddListener(OnRotationEnter);
+        RotationStay.AddListener(OnRotationStay);
+        RotationExit.AddListener(OnRotationExit);
     }
 
     private void Update()
@@ -106,9 +130,9 @@ public class Physgun : MonoBehaviour
         DrawBeamState();
     }
 
-    private void OnConnectionEnter()
+    private void OnGrabEnter()
     {
-        // Store connection details
+        // Store grab details
         connectedBody = currentHit.rigidbody;
         connectedLocalHit = currentHit.transform.InverseTransformPoint(currentHit.point);
         beamEnd.position = currentHit.point;
@@ -121,9 +145,13 @@ public class Physgun : MonoBehaviour
 
         // Attach to joint
         joint.connectedBody = connectedBody;
+
+        // Ragdoll support
+        Ragdoll rd = connectedBody.GetComponentInParent<Ragdoll>();
+        if (rd != null) rd.RagdollState = true;
     }
 
-    private void OnConnectionStay()
+    private void OnGrabStay()
     {
         // Distance Control
         if (Input.mouseScrollDelta.y != 0.0f)
@@ -140,56 +168,32 @@ public class Physgun : MonoBehaviour
             }
         }
         // Rotation Test
-        if (Input.GetKey(KeyCode.E))
+        if (Input.GetButton(inputRotateID))
         {
-            mouseLookX.enabled = false;
-            mouseLookY.enabled = false;
-
-            beamEnd.RotateAround(beamEnd.TransformPoint(joint.anchor), gunEnd.up, Time.deltaTime * rotationSpeedDegrees * Input.GetAxis("Mouse X"));
-            beamEnd.RotateAround(beamEnd.TransformPoint(joint.anchor), -gunEnd.right, Time.deltaTime * rotationSpeedDegrees * Input.GetAxis("Mouse Y"));
+            if (rotationStarted)
+                RotationStay.Invoke();
+            else
+            {
+                RotationEnter.Invoke();
+                rotationStarted = true;
+            }
         }
-        else
+        else if (rotationStarted)
         {
-            mouseLookX.enabled = true;
-            mouseLookY.enabled = true;
+            RotationExit.Invoke();
+            rotationStarted = false;
         }
-
-        #region HiddenTesting
-
-        //if (Input.GetButton("Fire2"))
-        //{
-        //beamEnd.Rotate(Vector3.left * Time.fixedDeltaTime * 5.0f, Space.World);
-        //rotationFromBeamEnd = Quaternion.FromToRotation(beamEnd.forward, currentHit.transform.forward);
-        //connectedBody.angularVelocity = rotationFromBeamEnd.eulerAngles * Mathf.Deg2Rad;
-        //Debug.Log(connectedBody.angularVelocity);
-        //connectedBody.transform.rotation = beamEnd.rotation * rotationFromBeamEnd;
-
-        //Quaternion target = Quaternion.AngleAxis(10, Vector3.up) * connectedBody.transform.rotation;
-        //// Quaternion smooth = Quaternion.RotateTowards(connectedBody.transform.rotation, target, 10 * Time.fixedDeltaTime);
-        //connectedBody.MoveRotation(target);
-        //}
-
-        //Quaternion CurrentDifference = Quaternion.FromToRotation(beamEnd.forward, connectedBody.transform.forward);
-
-        // if this doesn't work try "B.transform.eulerAngles - A.transform.eulerAngles" below
-        // Vector3 difference = beamEnd.eulerAngles - connectedBody.transform.eulerAngles;
-
-        //Vector3 difference = beamEnd.eulerAngles - connectedBody.transform.eulerAngles;
-        //Vector3 velocity = difference / Time.fixedDeltaTime;
-        //connectedBody.angularVelocity += velocity;
-
-        //connectedBody.rotation = gunEnd.transform.rotation;
-
-        //Vector3 targetPosition = (gunEnd.transform.position +
-        //        gunEnd.transform.forward * connectedDistance);
-        //connectedPoint = targetPosition;
-        //connectedBody.MovePosition(targetPosition);
-
-        #endregion HiddenTesting
     }
 
-    private void OnConnectionExit()
+    private void OnGrabExit()
     {
+        // Ragdoll support
+        Ragdoll rd = connectedBody.GetComponentInParent<Ragdoll>();
+        if (rd != null)
+        {
+            rd.RagdollState = false;
+        }
+
         // Restore previous RigidBody settings
         cacheSettings.Write(ref connectedBody);
         cacheSettings.Clear();
@@ -198,9 +202,20 @@ public class Physgun : MonoBehaviour
         connectedBody = null;
 
         beamEnd.position = gunEnd.position;
+    }
 
-        mouseLookX.enabled = true;
-        mouseLookY.enabled = true;
+    private void OnRotationEnter()
+    {
+    }
+
+    private void OnRotationStay()
+    {
+        beamEnd.Rotate(gunEnd.up, Time.deltaTime * rotationSpeedDegrees * Input.GetAxis("Mouse X"), Space.World);
+        beamEnd.Rotate(-gunEnd.right, Time.deltaTime * rotationSpeedDegrees * Input.GetAxis("Mouse Y"), Space.World);
+    }
+
+    private void OnRotationExit()
+    {
     }
 
     private void ProcessBeamState()
@@ -209,31 +224,28 @@ public class Physgun : MonoBehaviour
         bool input = Input.GetButton(inputUseID);
 
         if (input)
-        {
-            // Input Is Down
-
+        {   // Input Is Down
             // Lock Cursor
             Cursor.visible = false;
             Cursor.lockState = CursorLockMode.Locked;
 
-            inputWasHeldDown = true;
+            grabStarted = true;
             if (currentState == GunState.INACTIVE)
                 currentState = GunState.SEARCHING;
         }
         else
-        {
-            // Input Is Up
+        {   // Input Is Up
             if (currentState == GunState.SEARCHING)
                 currentState = GunState.INACTIVE;
 
             // Input Was Released
-            if (inputWasHeldDown)
+            if (grabStarted)
             {
-                inputWasHeldDown = false;
+                grabStarted = false;
                 if (currentState == GunState.CONNECTED)
                 {
-                    // Lost Connection
-                    OnConnectionExit();
+                    // Lost Grab
+                    GrabExit.Invoke();
                     currentState = GunState.INACTIVE;
                 }
             }
@@ -248,8 +260,8 @@ public class Physgun : MonoBehaviour
             {
                 if (currentHit.rigidbody && !(currentHit.rigidbody.gameObject.isStatic))
                 {
-                    // Begin Connection
-                    OnConnectionEnter();
+                    // Begin Grab
+                    GrabEnter.Invoke();
                     currentState = GunState.CONNECTED;
                 }
             }
@@ -258,7 +270,7 @@ public class Physgun : MonoBehaviour
         // Connected
         if (currentState == GunState.CONNECTED)
         {
-            OnConnectionStay();
+            GrabStay.Invoke();
         }
     }
 
@@ -297,7 +309,6 @@ public class Physgun : MonoBehaviour
                     for (int i = 1; i < beamLinePoints.Length; i++)
                     {
                         float percentage = i / (beamLinePoints.Length - 1.0f);
-                        //BeamPoints[i] = Vector3.Lerp(gunEnd.position, beamEnd.position, percentage);
                         beamLinePoints[i] = Bezier(gunEnd.position, midPoint, endPoint, percentage);
                     }
                     lineRenderer.SetPositions(beamLinePoints);
@@ -322,17 +333,5 @@ public class Physgun : MonoBehaviour
     public static Vector3 Bezier(Vector3 p1, Vector3 p2, Vector3 p3, float t)
     {
         return Vector3.Lerp(Vector3.Lerp(p1, p2, t), Vector3.Lerp(p2, p3, t), t);
-    }
-
-    private static int layermask_to_layer(LayerMask layerMask)
-    {
-        int layerNumber = 0;
-        int layer = layerMask.value;
-        while (layer > 0)
-        {
-            layer = layer >> 1;
-            layerNumber++;
-        }
-        return layerNumber - 1;
     }
 }

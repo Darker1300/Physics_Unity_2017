@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public class PlayerMovement : MonoBehaviour
 {
@@ -6,9 +6,10 @@ public class PlayerMovement : MonoBehaviour
     public string HorizontalInput = "Horizontal";
     public string VerticalInput = "Vertical";
     public string JumpInput = "Jump";
-    public float speed = 10f;
+    public float speed = 7f;
     public float jumpSpeed = 8.0F;
     public float gravity = 20.0F;
+    public float pushPower = 2.0F;
     private Vector3 moveDirection;
 
     private void Start()
@@ -37,5 +38,18 @@ public class PlayerMovement : MonoBehaviour
         // Apply gravity
         moveDirection.y -= gravity * Time.deltaTime;
         controller.Move(moveDirection * Time.fixedDeltaTime);
+    }
+
+    private void OnControllerColliderHit(ControllerColliderHit hit)
+    {
+        Rigidbody body = hit.collider.attachedRigidbody;
+        if (body == null || body.isKinematic)
+            return;
+
+        if (hit.moveDirection.y < -0.3F)
+            return;
+
+        Vector3 pushDir = new Vector3(hit.moveDirection.x, 0, hit.moveDirection.z);
+        body.velocity = pushDir * pushPower;
     }
 }
